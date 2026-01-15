@@ -1270,7 +1270,33 @@
 
         // Local weekly summary from localStorage
         function showLocalWeeklySummary(content) {
-            if (allSessions.length === 0) {
+            // Get sessions from last 7 days
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            const recentSessions = allSessions.filter(s => new Date(s.date) >= weekAgo);
+
+            // Include current active session if running
+            let currentSessionMins = Math.floor(totalSeconds / 60);
+            let currentSessionIntervals = intervalCount;
+            let currentPromote = Math.floor(categoryTimes.PROMOTE / 60);
+            let currentBuild = Math.floor(categoryTimes.BUILD / 60);
+            let currentDeliver = Math.floor(categoryTimes.DELIVER / 60);
+
+            // Calculate totals from saved sessions
+            let totalMins = recentSessions.reduce((sum, s) => sum + (s.totalMinutes || 0), 0);
+            let totalIntervals = recentSessions.reduce((sum, s) => sum + (s.intervals || 0), 0);
+            let promoteMin = recentSessions.reduce((sum, s) => sum + (s.promote || 0), 0);
+            let buildMin = recentSessions.reduce((sum, s) => sum + (s.build || 0), 0);
+            let deliverMin = recentSessions.reduce((sum, s) => sum + (s.deliver || 0), 0);
+
+            // Add current session to totals
+            totalMins += currentSessionMins;
+            totalIntervals += currentSessionIntervals;
+            promoteMin += currentPromote;
+            buildMin += currentBuild;
+            deliverMin += currentDeliver;
+
+            if (totalMins === 0 && allSessions.length === 0) {
                 content.innerHTML = `
                     <h2>Weekly Summary</h2>
                     <p style="color: #888; margin-top: 20px;">
@@ -1280,30 +1306,36 @@
                 return;
             }
 
-            // Get sessions from last 7 days
-            const weekAgo = new Date();
-            weekAgo.setDate(weekAgo.getDate() - 7);
-            const recentSessions = allSessions.filter(s => new Date(s.date) >= weekAgo);
-
-            const totalMins = recentSessions.reduce((sum, s) => sum + (s.totalMinutes || 0), 0);
-            const totalIntervals = recentSessions.reduce((sum, s) => sum + (s.intervals || 0), 0);
-            const promoteMin = recentSessions.reduce((sum, s) => sum + (s.promote || 0), 0);
-            const buildMin = recentSessions.reduce((sum, s) => sum + (s.build || 0), 0);
-            const deliverMin = recentSessions.reduce((sum, s) => sum + (s.deliver || 0), 0);
-
             const totalCat = promoteMin + buildMin + deliverMin;
             const promotePercent = totalCat > 0 ? (promoteMin / totalCat * 100) : 0;
             const buildPercent = totalCat > 0 ? (buildMin / totalCat * 100) : 0;
             const deliverPercent = totalCat > 0 ? (deliverMin / totalCat * 100) : 0;
 
-            // Group by day
+            // Group by day using consistent date format
             const byDay = {};
+            const today = new Date().toISOString().split('T')[0];
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
             recentSessions.forEach(s => {
-                const day = s.dateStr || new Date(s.date).toLocaleDateString();
-                if (!byDay[day]) byDay[day] = { minutes: 0, intervals: 0 };
-                byDay[day].minutes += s.totalMinutes || 0;
-                byDay[day].intervals += s.intervals || 0;
+                const d = new Date(s.date);
+                const dateKey = d.toISOString().split('T')[0];
+                const dayName = dayNames[d.getDay()];
+                const displayKey = `${dateKey}-${dayName}`;
+                if (!byDay[displayKey]) byDay[displayKey] = { minutes: 0, intervals: 0 };
+                byDay[displayKey].minutes += s.totalMinutes || 0;
+                byDay[displayKey].intervals += s.intervals || 0;
             });
+
+            // Add current session to today
+            if (currentSessionMins > 0) {
+                const d = new Date();
+                const dateKey = d.toISOString().split('T')[0];
+                const dayName = dayNames[d.getDay()];
+                const displayKey = `${dateKey}-${dayName}`;
+                if (!byDay[displayKey]) byDay[displayKey] = { minutes: 0, intervals: 0 };
+                byDay[displayKey].minutes += currentSessionMins;
+                byDay[displayKey].intervals += currentSessionIntervals;
+            }
 
             const daysTracked = Object.keys(byDay).length;
             const avgDaily = daysTracked > 0 ? Math.round(totalMins / daysTracked) : 0;
@@ -1357,10 +1389,10 @@
 
                 <div class="daily-list">
                     <h4>DAILY BREAKDOWN</h4>
-                    ${Object.keys(byDay).length > 0 ? Object.entries(byDay).map(([day, data]) => `
+                    ${Object.keys(byDay).length > 0 ? Object.keys(byDay).sort().reverse().map(day => `
                         <div class="daily-item">
                             <span>${day}</span>
-                            <span>${data.minutes} min (${data.intervals} intervals)</span>
+                            <span>${byDay[day].minutes} min (${byDay[day].intervals} intervals)</span>
                         </div>
                     `).join('') : '<p style="color: #555;">No sessions tracked yet</p>'}
                 </div>
