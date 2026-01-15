@@ -557,6 +557,22 @@
         .save-indicator.show {
             transform: translateY(0);
         }
+
+        .btn-download {
+            background: #a855f7;
+            color: #fff;
+            padding: 15px 25px;
+        }
+
+        .btn-download:hover {
+            background: #9333ea;
+        }
+
+        .storage-info {
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -598,7 +614,9 @@
             <button class="btn btn-start" id="startBtn">START</button>
             <button class="btn btn-reset" id="resetBtn">RESET</button>
             <button class="btn btn-weekly" id="weeklyBtn">WEEKLY</button>
+            <button class="btn btn-download" id="downloadBtn">DOWNLOAD</button>
         </div>
+        <div class="storage-info" id="storageInfo"></div>
 
         <div class="sound-section">
             <h3>NOTIFICATION SOUND</h3>
@@ -643,10 +661,12 @@
 
     <script>
         const SERVER_URL = 'http://localhost:3847';
+        const STORAGE_KEY = 'hormozi_focus_sessions';
 
         // Audio Context for generating sounds
         let audioContext = null;
         let serverConnected = false;
+        let allSessions = []; // All saved sessions from localStorage
 
         function getAudioContext() {
             if (!audioContext) {
@@ -655,10 +675,48 @@
             return audioContext;
         }
 
+        // localStorage functions
+        function loadFromStorage() {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                allSessions = data ? JSON.parse(data) : [];
+                updateStorageInfo();
+            } catch (err) {
+                console.error('Failed to load from storage:', err);
+                allSessions = [];
+            }
+        }
+
+        function saveToStorage(sessionData) {
+            try {
+                const session = {
+                    ...sessionData,
+                    date: new Date().toISOString(),
+                    dateStr: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                };
+                allSessions.push(session);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(allSessions));
+                updateStorageInfo();
+            } catch (err) {
+                console.error('Failed to save to storage:', err);
+            }
+        }
+
+        function updateStorageInfo() {
+            const info = document.getElementById('storageInfo');
+            const totalSessions = allSessions.length;
+            const totalMins = allSessions.reduce((sum, s) => sum + (s.totalMinutes || 0), 0);
+            if (totalSessions > 0) {
+                info.textContent = `${totalSessions} sessions saved locally (${totalMins} min total)`;
+            } else {
+                info.textContent = 'Sessions auto-save to browser';
+            }
+        }
+
         // Check server connection
         async function checkServer() {
             try {
-                const res = await fetch(`${SERVER_URL}/ping`);
+                const res = await fetch(`${SERVER_URL}/ping`, { timeout: 2000 });
                 const data = await res.json();
                 serverConnected = true;
                 document.getElementById('statusDot').classList.add('connected');
@@ -666,11 +724,12 @@
             } catch (err) {
                 serverConnected = false;
                 document.getElementById('statusDot').classList.remove('connected');
-                document.getElementById('statusText').textContent = 'Server offline - run: node server.js';
+                document.getElementById('statusText').textContent = 'Saving to browser (local mode)';
             }
         }
 
-        // Check server on load and every 30 seconds
+        // Load saved sessions and check server on load
+        loadFromStorage();
         checkServer();
         setInterval(checkServer, 30000);
 
@@ -893,9 +952,9 @@
             sounds[selectedSound]();
         }
 
-        // Save session to server
-        async function saveToServer() {
-            if (!serverConnected || totalSeconds < 60) return;
+        // Save session to server and localStorage
+        async function saveSession() {
+            if (totalSeconds < 60) return;
 
             const data = {
                 totalMinutes: Math.floor(totalSeconds / 60),
@@ -906,25 +965,98 @@
                 log: sessionLog
             };
 
-            try {
-                const res = await fetch(`${SERVER_URL}/save`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                const result = await res.json();
-                if (result.success) {
-                    showSaveIndicator();
+            // Always save to localStorage
+            saveToStorage(data);
+
+            // Try to save to server if connected
+            if (serverConnected) {
+                try {
+                    const res = await fetch(`${SERVER_URL}/save`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    const result = await res.json();
+                    if (result.success) {
+                        showSaveIndicator('Saved to daily tracker');
+                    }
+                } catch (err) {
+                    console.error('Failed to save to server:', err);
+                    showSaveIndicator('Saved to browser');
                 }
-            } catch (err) {
-                console.error('Failed to save:', err);
+            } else {
+                showSaveIndicator('Saved to browser');
             }
         }
 
-        function showSaveIndicator() {
+        function showSaveIndicator(message = 'Saved') {
             const indicator = document.getElementById('saveIndicator');
+            indicator.textContent = message;
             indicator.classList.add('show');
             setTimeout(() => indicator.classList.remove('show'), 3000);
+        }
+
+        // Download all sessions as markdown
+        function downloadSessions() {
+            if (allSessions.length === 0) {
+                alert('No sessions to download yet. Complete a focus block first!');
+                return;
+            }
+
+            // Group sessions by date
+            const byDate = {};
+            allSessions.forEach(s => {
+                const dateKey = s.dateStr || new Date(s.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                if (!byDate[dateKey]) byDate[dateKey] = [];
+                byDate[dateKey].push(s);
+            });
+
+            // Calculate totals
+            const totalMins = allSessions.reduce((sum, s) => sum + (s.totalMinutes || 0), 0);
+            const totalIntervals = allSessions.reduce((sum, s) => sum + (s.intervals || 0), 0);
+            const totalPromote = allSessions.reduce((sum, s) => sum + (s.promote || 0), 0);
+            const totalBuild = allSessions.reduce((sum, s) => sum + (s.build || 0), 0);
+            const totalDeliver = allSessions.reduce((sum, s) => sum + (s.deliver || 0), 0);
+
+            let md = `# Hormozi Focus Timer - Export\n`;
+            md += `**Exported:** ${new Date().toLocaleString()}\n\n`;
+            md += `## Summary\n`;
+            md += `- **Total Focus Time:** ${(totalMins / 60).toFixed(1)} hours (${totalMins} min)\n`;
+            md += `- **Total Intervals:** ${totalIntervals}\n`;
+            md += `- **Total Sessions:** ${allSessions.length}\n\n`;
+            md += `## Category Breakdown\n`;
+            md += `- **PROMOTE:** ${totalPromote} min\n`;
+            md += `- **BUILD:** ${totalBuild} min\n`;
+            md += `- **DELIVER:** ${totalDeliver} min\n\n`;
+            md += `---\n\n`;
+            md += `## Sessions by Day\n\n`;
+
+            Object.keys(byDate).sort().reverse().forEach(dateKey => {
+                md += `### ${dateKey}\n\n`;
+                byDate[dateKey].forEach((s, i) => {
+                    md += `**Session ${i + 1}:** ${s.totalMinutes} min (${s.intervals} intervals)\n`;
+                    md += `- PROMOTE: ${s.promote} min | BUILD: ${s.build} min | DELIVER: ${s.deliver} min\n`;
+                    if (s.log && s.log.length > 0) {
+                        md += `\nLog:\n`;
+                        s.log.forEach(entry => {
+                            md += `- ${entry.time}: ${entry.message}\n`;
+                        });
+                    }
+                    md += `\n`;
+                });
+                md += `---\n\n`;
+            });
+
+            // Create and download file
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `hormozi-focus-export-${new Date().toISOString().split('T')[0]}.md`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         function tick() {
@@ -983,8 +1115,8 @@
                 const totalMinutes = Math.floor(totalSeconds / 60);
                 addLogEntry(`Session ended: ${totalMinutes} min, ${intervalCount} intervals`);
 
-                // Auto-save to server
-                saveToServer();
+                // Auto-save session
+                saveSession();
             }
 
             isRunning = false;
@@ -1044,19 +1176,15 @@
             });
         }
 
-        // Weekly summary
+        // Weekly summary - uses server if connected, localStorage otherwise
         async function showWeeklySummary() {
             const modal = document.getElementById('weeklyModal');
             const content = document.getElementById('weeklyContent');
             modal.classList.add('show');
 
+            // If no server, use localStorage data
             if (!serverConnected) {
-                content.innerHTML = `
-                    <h2>Weekly Summary</h2>
-                    <p style="color: #888; margin-top: 20px;">
-                        Server not connected. Run <code style="background: #333; padding: 4px 8px; border-radius: 4px;">node server.js</code> to enable weekly summaries.
-                    </p>
-                `;
+                showLocalWeeklySummary(content);
                 return;
             }
 
@@ -1140,10 +1268,110 @@
             document.getElementById('weeklyModal').classList.remove('show');
         }
 
+        // Local weekly summary from localStorage
+        function showLocalWeeklySummary(content) {
+            if (allSessions.length === 0) {
+                content.innerHTML = `
+                    <h2>Weekly Summary</h2>
+                    <p style="color: #888; margin-top: 20px;">
+                        No sessions recorded yet. Complete a focus block to see your stats!
+                    </p>
+                `;
+                return;
+            }
+
+            // Get sessions from last 7 days
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            const recentSessions = allSessions.filter(s => new Date(s.date) >= weekAgo);
+
+            const totalMins = recentSessions.reduce((sum, s) => sum + (s.totalMinutes || 0), 0);
+            const totalIntervals = recentSessions.reduce((sum, s) => sum + (s.intervals || 0), 0);
+            const promoteMin = recentSessions.reduce((sum, s) => sum + (s.promote || 0), 0);
+            const buildMin = recentSessions.reduce((sum, s) => sum + (s.build || 0), 0);
+            const deliverMin = recentSessions.reduce((sum, s) => sum + (s.deliver || 0), 0);
+
+            const totalCat = promoteMin + buildMin + deliverMin;
+            const promotePercent = totalCat > 0 ? (promoteMin / totalCat * 100) : 0;
+            const buildPercent = totalCat > 0 ? (buildMin / totalCat * 100) : 0;
+            const deliverPercent = totalCat > 0 ? (deliverMin / totalCat * 100) : 0;
+
+            // Group by day
+            const byDay = {};
+            recentSessions.forEach(s => {
+                const day = s.dateStr || new Date(s.date).toLocaleDateString();
+                if (!byDay[day]) byDay[day] = { minutes: 0, intervals: 0 };
+                byDay[day].minutes += s.totalMinutes || 0;
+                byDay[day].intervals += s.intervals || 0;
+            });
+
+            const daysTracked = Object.keys(byDay).length;
+            const avgDaily = daysTracked > 0 ? Math.round(totalMins / daysTracked) : 0;
+
+            content.innerHTML = `
+                <h2>Weekly Summary</h2>
+                <p class="period">Last 7 days (from browser storage)</p>
+
+                <div class="weekly-stats">
+                    <div class="weekly-stat">
+                        <div class="value">${(totalMins / 60).toFixed(1)}</div>
+                        <div class="label">Hours Focused</div>
+                    </div>
+                    <div class="weekly-stat">
+                        <div class="value">${totalIntervals}</div>
+                        <div class="label">Intervals</div>
+                    </div>
+                    <div class="weekly-stat">
+                        <div class="value">${avgDaily}</div>
+                        <div class="label">Avg Daily (min)</div>
+                    </div>
+                    <div class="weekly-stat">
+                        <div class="value">${daysTracked}</div>
+                        <div class="label">Days Tracked</div>
+                    </div>
+                </div>
+
+                <div class="category-bars">
+                    <div class="category-bar promote">
+                        <div class="label">
+                            <span>PROMOTE</span>
+                            <span>${promoteMin} min (${Math.round(promotePercent)}%)</span>
+                        </div>
+                        <div class="bar"><div class="fill" style="width: ${promotePercent}%"></div></div>
+                    </div>
+                    <div class="category-bar build">
+                        <div class="label">
+                            <span>BUILD</span>
+                            <span>${buildMin} min (${Math.round(buildPercent)}%)</span>
+                        </div>
+                        <div class="bar"><div class="fill" style="width: ${buildPercent}%"></div></div>
+                    </div>
+                    <div class="category-bar deliver">
+                        <div class="label">
+                            <span>DELIVER</span>
+                            <span>${deliverMin} min (${Math.round(deliverPercent)}%)</span>
+                        </div>
+                        <div class="bar"><div class="fill" style="width: ${deliverPercent}%"></div></div>
+                    </div>
+                </div>
+
+                <div class="daily-list">
+                    <h4>DAILY BREAKDOWN</h4>
+                    ${Object.keys(byDay).length > 0 ? Object.entries(byDay).map(([day, data]) => `
+                        <div class="daily-item">
+                            <span>${day}</span>
+                            <span>${data.minutes} min (${data.intervals} intervals)</span>
+                        </div>
+                    `).join('') : '<p style="color: #555;">No sessions tracked yet</p>'}
+                </div>
+            `;
+        }
+
         // Event listeners
         startBtn.addEventListener('click', start);
         resetBtn.addEventListener('click', reset);
         weeklyBtn.addEventListener('click', showWeeklySummary);
+        document.getElementById('downloadBtn').addEventListener('click', downloadSessions);
         testSoundBtn.addEventListener('click', playSound);
 
         // Mode toggle
@@ -1233,7 +1461,7 @@
         // Auto-save before page unload
         window.addEventListener('beforeunload', () => {
             if (totalSeconds >= 60) {
-                saveToServer();
+                saveSession();
             }
         });
 
