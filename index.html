@@ -590,7 +590,7 @@
             <button onclick="requestNotifications()">Enable Notifications</button>
         </div>
 
-        <input type="text" class="task-input" id="taskInput" placeholder="What are you working on? (or say P/B/D to switch)">
+        <input type="text" class="task-input" id="taskInput" placeholder="What are you working on? (type P/B/D + Enter to switch)">
 
         <div class="category-selector">
             <button class="category-btn promote" data-category="PROMOTE">PROMOTE</button>
@@ -1436,18 +1436,23 @@
             }
         }
 
-        // Voice/text command in task input
-        taskInput.addEventListener('input', (e) => {
-            const val = e.target.value.toUpperCase().trim();
-            if (val === 'P' || val === 'PROMOTE') {
-                selectCategory('PROMOTE');
-                taskInput.value = '';
-            } else if (val === 'B' || val === 'BUILD') {
-                selectCategory('BUILD');
-                taskInput.value = '';
-            } else if (val === 'D' || val === 'DELIVER') {
-                selectCategory('DELIVER');
-                taskInput.value = '';
+        // Voice/text command in task input - press Enter after P/B/D to switch
+        taskInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const val = e.target.value.toUpperCase().trim();
+                if (val === 'P' || val === 'PROMOTE') {
+                    e.preventDefault();
+                    selectCategory('PROMOTE');
+                    taskInput.value = '';
+                } else if (val === 'B' || val === 'BUILD') {
+                    e.preventDefault();
+                    selectCategory('BUILD');
+                    taskInput.value = '';
+                } else if (val === 'D' || val === 'DELIVER') {
+                    e.preventDefault();
+                    selectCategory('DELIVER');
+                    taskInput.value = '';
+                }
             }
         });
 
