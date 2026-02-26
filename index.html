@@ -578,7 +578,7 @@
 <body>
     <div class="container">
         <h1>HORMOZI FOCUS TIMER</h1>
-        <p class="subtitle">Stay locked in - Every 30 seconds counts (TEST MODE)</p>
+        <p class="subtitle">Stay locked in - Every 15 minutes counts</p>
 
         <div class="server-status" id="serverStatus">
             <span class="status-dot" id="statusDot"></span>
@@ -603,7 +603,7 @@
             <button class="mode-btn" data-mode="countup">Count Up</button>
         </div>
 
-        <div class="timer-display countdown" id="timerDisplay">00:30</div>
+        <div class="timer-display countdown" id="timerDisplay">15:00</div>
         <div class="total-time" id="totalTime">Total: 00:00:00</div>
 
         <div class="interval-counter">
@@ -704,7 +704,7 @@
 
         // Auto-save current session to a separate key (overwrites, no duplicates)
         function autoSaveCurrentSession() {
-            if (totalSeconds < 5) return;
+            if (totalSeconds < 60) return;
             try {
                 const current = {
                     totalMinutes: Math.floor(totalSeconds / 60),
@@ -888,7 +888,7 @@
         // State
         let isRunning = false;
         let totalSeconds = 0;
-        let countdownSeconds = 30;
+        let countdownSeconds = 900;
         let intervalCount = 0;
         let timerInterval = null;
         let selectedSound = 'chime';
@@ -983,7 +983,7 @@
 
         // Save session to server and localStorage
         async function saveSession() {
-            if (totalSeconds < 5) return;
+            if (totalSeconds < 60) return;
 
             const data = {
                 totalMinutes: Math.floor(totalSeconds / 60),
@@ -1129,13 +1129,13 @@
             if (countdownSeconds <= 0) {
                 intervalCount++;
                 intervalCountEl.textContent = intervalCount;
-                countdownSeconds = 30;
+                countdownSeconds = 900;
 
                 playSound();
 
                 const task = taskInput.value || 'Focused work';
                 const category = selectedCategory || 'GENERAL';
-                const msg = `30 sec - ${category}: ${task}`;
+                const msg = `15 min - ${category}: ${task}`;
                 addLogEntry(msg);
                 sendNotification(msg);
 
@@ -1185,7 +1185,7 @@
 
             isRunning = false;
             totalSeconds = 0;
-            countdownSeconds = 30;
+            countdownSeconds = 900;
             intervalCount = 0;
             sessionStartTime = null;
             categoryTimes = { PROMOTE: 0, BUILD: 0, DELIVER: 0, GENERAL: 0 };
