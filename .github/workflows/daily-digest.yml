@@ -1,0 +1,21 @@
+name: Daily Productivity Digest
+
+on:
+  push:
+    paths:
+      - 'data/*.md'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  create-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create daily digest issue
+        run: node scripts/create-issue.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

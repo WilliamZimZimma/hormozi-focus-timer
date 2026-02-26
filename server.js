@@ -3,7 +3,12 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 3847;
-const TRACKER_DIR = path.join(__dirname, '..'); // Save to parent Time Tracker folder
+const TRACKER_DIR = path.join(__dirname, 'data');
+
+// Ensure data directory exists
+if (!fs.existsSync(TRACKER_DIR)) {
+    fs.mkdirSync(TRACKER_DIR, { recursive: true });
+}
 
 // Get today's filename
 function getTodayFilename() {
