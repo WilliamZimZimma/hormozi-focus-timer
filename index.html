@@ -578,7 +578,7 @@
 <body>
     <div class="container">
         <h1>HORMOZI FOCUS TIMER</h1>
-        <p class="subtitle">Stay locked in - Every 15 minutes counts</p>
+        <p class="subtitle">Stay locked in - Every 30 seconds counts (TEST MODE)</p>
 
         <div class="server-status" id="serverStatus">
             <span class="status-dot" id="statusDot"></span>
@@ -603,7 +603,7 @@
             <button class="mode-btn" data-mode="countup">Count Up</button>
         </div>
 
-        <div class="timer-display countdown" id="timerDisplay">15:00</div>
+        <div class="timer-display countdown" id="timerDisplay">00:30</div>
         <div class="total-time" id="totalTime">Total: 00:00:00</div>
 
         <div class="interval-counter">
@@ -700,6 +700,35 @@
             } catch (err) {
                 console.error('Failed to save to storage:', err);
             }
+        }
+
+        // Auto-save current session to a separate key (overwrites, no duplicates)
+        function autoSaveCurrentSession() {
+            if (totalSeconds < 5) return;
+            try {
+                const current = {
+                    totalMinutes: Math.floor(totalSeconds / 60),
+                    totalSeconds: totalSeconds,
+                    intervals: intervalCount,
+                    promote: Math.floor(categoryTimes.PROMOTE / 60),
+                    promoteSeconds: categoryTimes.PROMOTE,
+                    build: Math.floor(categoryTimes.BUILD / 60),
+                    buildSeconds: categoryTimes.BUILD,
+                    deliver: Math.floor(categoryTimes.DELIVER / 60),
+                    deliverSeconds: categoryTimes.DELIVER,
+                    log: sessionLog,
+                    date: sessionStartTime ? sessionStartTime.toISOString() : new Date().toISOString(),
+                    dateStr: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                };
+                localStorage.setItem(STORAGE_KEY + '_current', JSON.stringify(current));
+            } catch (err) {
+                console.error('Auto-save failed:', err);
+            }
+        }
+
+        // Clear the auto-save key (called after RESET saves the full session)
+        function clearAutoSave() {
+            localStorage.removeItem(STORAGE_KEY + '_current');
         }
 
         function updateStorageInfo() {
@@ -859,7 +888,7 @@
         // State
         let isRunning = false;
         let totalSeconds = 0;
-        let countdownSeconds = 900;
+        let countdownSeconds = 30;
         let intervalCount = 0;
         let timerInterval = null;
         let selectedSound = 'chime';
@@ -954,14 +983,18 @@
 
         // Save session to server and localStorage
         async function saveSession() {
-            if (totalSeconds < 60) return;
+            if (totalSeconds < 5) return;
 
             const data = {
                 totalMinutes: Math.floor(totalSeconds / 60),
+                totalSeconds: totalSeconds,
                 intervals: intervalCount,
                 promote: Math.floor(categoryTimes.PROMOTE / 60),
+                promoteSeconds: categoryTimes.PROMOTE,
                 build: Math.floor(categoryTimes.BUILD / 60),
+                buildSeconds: categoryTimes.BUILD,
                 deliver: Math.floor(categoryTimes.DELIVER / 60),
+                deliverSeconds: categoryTimes.DELIVER,
                 log: sessionLog
             };
 
@@ -998,32 +1031,58 @@
 
         // Download all sessions as markdown
         function downloadSessions() {
-            if (allSessions.length === 0) {
+            // Include current running/paused session in download even if not yet saved via RESET
+            let sessionsToExport = [...allSessions];
+            if (totalSeconds >= 5) {
+                sessionsToExport.push({
+                    totalMinutes: Math.floor(totalSeconds / 60),
+                    totalSeconds: totalSeconds,
+                    intervals: intervalCount,
+                    promote: Math.floor(categoryTimes.PROMOTE / 60),
+                    promoteSeconds: categoryTimes.PROMOTE,
+                    build: Math.floor(categoryTimes.BUILD / 60),
+                    buildSeconds: categoryTimes.BUILD,
+                    deliver: Math.floor(categoryTimes.DELIVER / 60),
+                    deliverSeconds: categoryTimes.DELIVER,
+                    log: sessionLog,
+                    date: sessionStartTime ? sessionStartTime.toISOString() : new Date().toISOString(),
+                    dateStr: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+                    active: true
+                });
+            } else {
+                // Check for auto-saved session from a previous crash/close
+                try {
+                    const autoSaved = localStorage.getItem(STORAGE_KEY + '_current');
+                    if (autoSaved) sessionsToExport.push({ ...JSON.parse(autoSaved), recovered: true });
+                } catch (e) {}
+            }
+            if (sessionsToExport.length === 0) {
                 alert('No sessions to download yet. Complete a focus block first!');
                 return;
             }
 
             // Group sessions by date
             const byDate = {};
-            allSessions.forEach(s => {
+            sessionsToExport.forEach(s => {
                 const dateKey = s.dateStr || new Date(s.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
                 if (!byDate[dateKey]) byDate[dateKey] = [];
                 byDate[dateKey].push(s);
             });
 
-            // Calculate totals
-            const totalMins = allSessions.reduce((sum, s) => sum + (s.totalMinutes || 0), 0);
-            const totalIntervals = allSessions.reduce((sum, s) => sum + (s.intervals || 0), 0);
-            const totalPromote = allSessions.reduce((sum, s) => sum + (s.promote || 0), 0);
-            const totalBuild = allSessions.reduce((sum, s) => sum + (s.build || 0), 0);
-            const totalDeliver = allSessions.reduce((sum, s) => sum + (s.deliver || 0), 0);
+            // Calculate totals (use seconds if available for better accuracy with short intervals)
+            const totalSecs = sessionsToExport.reduce((sum, s) => sum + (s.totalSeconds || (s.totalMinutes || 0) * 60), 0);
+            const totalMins = Math.round(totalSecs / 60);
+            const totalIntervals = sessionsToExport.reduce((sum, s) => sum + (s.intervals || 0), 0);
+            const totalPromote = sessionsToExport.reduce((sum, s) => sum + (s.promote || 0), 0);
+            const totalBuild = sessionsToExport.reduce((sum, s) => sum + (s.build || 0), 0);
+            const totalDeliver = sessionsToExport.reduce((sum, s) => sum + (s.deliver || 0), 0);
 
             let md = `# Hormozi Focus Timer - Export\n`;
             md += `**Exported:** ${new Date().toLocaleString()}\n\n`;
             md += `## Summary\n`;
-            md += `- **Total Focus Time:** ${(totalMins / 60).toFixed(1)} hours (${totalMins} min)\n`;
+            md += `- **Total Focus Time:** ${totalSecs >= 3600 ? (totalSecs / 3600).toFixed(1) + ' hours' : totalMins + ' min'} (${Math.floor(totalSecs / 60)}m ${totalSecs % 60}s)\n`;
             md += `- **Total Intervals:** ${totalIntervals}\n`;
-            md += `- **Total Sessions:** ${allSessions.length}\n\n`;
+            md += `- **Total Sessions:** ${sessionsToExport.length}\n\n`;
             md += `## Category Breakdown\n`;
             md += `- **PROMOTE:** ${totalPromote} min\n`;
             md += `- **BUILD:** ${totalBuild} min\n`;
@@ -1034,7 +1093,8 @@
             Object.keys(byDate).sort().reverse().forEach(dateKey => {
                 md += `### ${dateKey}\n\n`;
                 byDate[dateKey].forEach((s, i) => {
-                    md += `**Session ${i + 1}:** ${s.totalMinutes} min (${s.intervals} intervals)\n`;
+                    const sessionTime = s.totalSeconds ? `${Math.floor(s.totalSeconds / 60)}m ${s.totalSeconds % 60}s` : `${s.totalMinutes} min`;
+                    md += `**Session ${i + 1}${s.active ? ' (active)' : ''}:** ${sessionTime} (${s.intervals} intervals)\n`;
                     md += `- PROMOTE: ${s.promote} min | BUILD: ${s.build} min | DELIVER: ${s.deliver} min\n`;
                     if (s.log && s.log.length > 0) {
                         md += `\nLog:\n`;
@@ -1052,7 +1112,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `hormozi-focus-export-${new Date().toISOString().split('T')[0]}.md`;
+            a.download = `hormozi-focus-export-${new Date().toISOString().split('T')[0]}.txt`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1069,15 +1129,18 @@
             if (countdownSeconds <= 0) {
                 intervalCount++;
                 intervalCountEl.textContent = intervalCount;
-                countdownSeconds = 900;
+                countdownSeconds = 30;
 
                 playSound();
 
                 const task = taskInput.value || 'Focused work';
                 const category = selectedCategory || 'GENERAL';
-                const msg = `15 min - ${category}: ${task}`;
+                const msg = `30 sec - ${category}: ${task}`;
                 addLogEntry(msg);
                 sendNotification(msg);
+
+                // Auto-save current session state so data isn't lost
+                autoSaveCurrentSession();
 
                 timerDisplay.classList.add('flash');
                 setTimeout(() => timerDisplay.classList.remove('flash'), 500);
@@ -1115,13 +1178,14 @@
                 const totalMinutes = Math.floor(totalSeconds / 60);
                 addLogEntry(`Session ended: ${totalMinutes} min, ${intervalCount} intervals`);
 
-                // Auto-save session
+                // Save session and clear auto-save
                 saveSession();
+                clearAutoSave();
             }
 
             isRunning = false;
             totalSeconds = 0;
-            countdownSeconds = 900;
+            countdownSeconds = 30;
             intervalCount = 0;
             sessionStartTime = null;
             categoryTimes = { PROMOTE: 0, BUILD: 0, DELIVER: 0, GENERAL: 0 };
